@@ -1,0 +1,13 @@
+[project]
+name = "rational-negotiator"
+version = "1.0.0"
+description = "Hybrid LLM + deterministic rules negotiation agent for AgentBeats"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "a2a-sdk[http-server]>=0.3.0",
+    "uvicorn>=0.30.0",
+    "starlette>=0.38.0",
+    "openai>=1.0.0",
+    "python-dotenv>=1.0.0",
+]

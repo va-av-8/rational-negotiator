@@ -1,0 +1,14 @@
+[agent]
+name = "Rational Negotiator"
+description = "Hybrid LLM + deterministic rules negotiation agent with M1-M5 constraint enforcement"
+version = "1.0.0"
+
+[docker]
+image = "rational-negotiator:latest"
+port = 8080
+
+[env]
+# One of these must be provided at runtime
+OPENAI_API_KEY = ""
+OPENROUTER_API_KEY = ""
+LLM_MODEL = ""
