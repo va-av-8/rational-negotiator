@@ -1,0 +1,17 @@
+{
+  agent: {
+    name: "Rational Negotiator",
+    description: "Strategic bargaining agent with LLM reasoning and deterministic constraint enforcement",
+    version: "1.0.0",
+  },
+  docker: {
+    image: "ghcr.io/va-av-8/rational-negotiator:latest",
+    port: 8080,
+  },
+  env: {
+    // Provide one of these at runtime
+    OPENAI_API_KEY: "",
+    OPENROUTER_API_KEY: "",
+    LLM_MODEL: "",
+  },
+}
