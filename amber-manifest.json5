@@ -1,17 +1,28 @@
 {
-  agent: {
-    name: "Rational Negotiator",
-    description: "Strategic bargaining agent with LLM reasoning and deterministic constraint enforcement",
-    version: "1.0.0",
-  },
-  docker: {
+  manifest_version: "0.2.0",
+  program: {
     image: "ghcr.io/va-av-8/rational-negotiator:latest",
-    port: 8080,
+    entrypoint: "python main.py --host 0.0.0.0 --port 8080",
+    env: {
+      PYTHONUNBUFFERED: "1",
+      // API key for LLM (provide one)
+      OPENAI_API_KEY: "${secrets.OPENAI_API_KEY}",
+    },
+    network: {
+      endpoints: [
+        { name: "endpoint", port: 8080 },
+      ],
+    },
   },
-  env: {
-    // Provide one of these at runtime
-    OPENAI_API_KEY: "",
-    OPENROUTER_API_KEY: "",
-    LLM_MODEL: "",
+  config_schema: {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: false,
   },
+  slots: {},
+  provides: {
+    a2a: { kind: "a2a", endpoint: "endpoint" },
+  },
+  exports: { a2a: "a2a" },
 }
