@@ -21,7 +21,7 @@
     },
     network: {
       endpoints: [
-        { name: "a2a_endpoint", port 8080 },
+        { name: "a2a_endpoint", port: 8080 },
       ],
     },
   },
