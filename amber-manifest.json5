@@ -1,27 +1,29 @@
 {
-  manifest_version: "0.2.0",
+  manifest_version: "0.1.0",
+  config_schema: {
+    type: "object",
+    properties: {
+      OPENAI_API_KEY: { type: "string", secret: true },
+    },
+    required: ["OPENAI_API_KEY"],
+    additionalProperties: false,
+  },
+  slots: {},
   program: {
     image: "ghcr.io/va-av-8/rational-negotiator:latest",
     entrypoint: "python main.py --host 0.0.0.0 --port 8080",
     env: {
       PYTHONUNBUFFERED: "1",
-      OPENAI_API_KEY: "${env.AMBER_CONFIG_CHALLENGER_OPENAI_API_KEY}",
+      OPENAI_API_KEY: "${config.OPENAI_API_KEY}",
     },
     network: {
       endpoints: [
-        { name: "endpoint", port: 8080 },
+        { name: "a2a_endpoint", port: 8080 },
       ],
     },
   },
-  config_schema: {
-    type: "object",
-    properties: {},
-    required: [],
-    additionalProperties: false,
-  },
-  slots: {},
   provides: {
-    a2a: { kind: "a2a", endpoint: "endpoint" },
+    a2a: { kind: "a2a", endpoint: "a2a_endpoint" },
   },
   exports: { a2a: "a2a" },
 }
