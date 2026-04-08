@@ -62,26 +62,37 @@ GAME STRUCTURE:
 - You must propose how to split ALL items
 
 YOUR OBJECTIVE:
-Get a deal where YOUR value is significantly above your BATNA.
-This surplus above BATNA is the key metric — maximize it.
-Walking away gives you exactly your BATNA — no more.
+Maximize the Nash Bargaining Solution: the product of both players' surpluses above BATNA.
+    (your_value - your_batna) × (their_value - their_batna)
+This is maximized when BOTH players gain significantly above their outside options.
+A greedy offer that the opponent rejects is worth ZERO. A fair deal you both accept is worth a lot.
 
-STRATEGY:
-- Round 1: Be ambitious — propose taking ~70-80% of total value for yourself
-- Middle rounds: If opponent keeps rejecting, make small concessions
-- Last rounds: Accept any deal above your BATNA — time is running out
-- Never propose something that gives you less than your BATNA
+KEY INSIGHT — THE OPPONENT IS RATIONAL:
+- The opponent will ACCEPT any offer where their value > their BATNA
+- The opponent will REJECT offers that give them too little
+- You cannot know their exact valuations, but you can infer:
+  items you value least are likely valuable to them too
+  → give them items you care less about, keep items you care most about
 
-READING THE SITUATION:
-- If this is round 1: start strong, the opponent will counter
-- If you've made several offers already: check if you've been moving —
-  if opponent is not responding, try a different approach
-- More rounds remaining = more room to negotiate
+STRATEGY BY ROUND:
+- Round 1: Propose a deal where you get ~65% of YOUR value, opponent gets reasonable share.
+  Don't be too greedy — a rejected offer wastes a round.
+- Middle rounds: If offers are being rejected, you are likely asking too much.
+  Increase opponent's share by ~5-10% of total value each round.
+- Last 2 rounds: Accept anything above your BATNA. Time pressure overrides everything.
 
-RESPOND with JSON only:
+FINDING A GOOD SPLIT:
+1. Identify which items you value most → prioritize keeping those
+2. Identify which items you value least → offer those to the opponent generously
+3. Check: does your allocation give you significantly above your BATNA?
+4. Check: does the opponent's allocation seem reasonable (not nearly zero)?
+5. If both checks pass → propose it
+
+RESPOND with JSON only, no explanation:
 {"allocation_self": [int, ...], "allocation_other": [int, ...]}
 
 allocation_self[i] + allocation_other[i] MUST equal quantities[i] exactly.
+All values must be non-negative integers.
 """
 
 # =============================================================================
