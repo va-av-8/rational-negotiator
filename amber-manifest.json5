@@ -2,16 +2,21 @@
   manifest_version: "0.1.0",
   config_schema: {
     type: "object",
-    properties: {},
-    required: [],
+    properties: {
+      openai_api_key: { type: "string", secret: true },
+    },
+    required: ["openai_api_key"],
     additionalProperties: false,
   },
-  slots: {},
+  slots: {
+    proxy: { kind: "a2a", optional: true },
+  },
   program: {
     image: "ghcr.io/va-av-8/rational-negotiator:latest",
     entrypoint: "python main.py --host 0.0.0.0 --port 8080",
     env: {
       PYTHONUNBUFFERED: "1",
+      OPENAI_API_KEY: "${config.openai_api_key}",
     },
     network: {
       endpoints: [
