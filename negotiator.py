@@ -429,16 +429,26 @@ def handle_negotiation_message(message_text: str) -> dict[str, Any]:
         offer_allocation_self = pending.get("offer_allocation_self", [])
         value = calculate_value(offer_allocation_self, valuations_self)
 
-        # Apply discount for current round
         round_index = obs.get("round_index", 1)
+        max_rounds = obs.get("max_rounds", 10)
         discount = obs.get("discount", 0.98)
         discounted_batna = batna_self * (discount ** (round_index - 1))
 
-        if value >= discounted_batna:
-            # M5: Don't walk away from offer better than BATNA
+        # В первой трети — держим полный порог
+        # В середине — снижаем до 70%
+        # В последней трети — принимаем почти всё (30%)
+        progress = round_index / max_rounds
+        if progress < 0.33:
+            threshold = discounted_batna
+        elif progress < 0.67:
+            threshold = discounted_batna * 0.7
+        else:
+            threshold = discounted_batna * 0.3
+
+        if value >= threshold:
             return {"action": "ACCEPT"}
         else:
-            # M4: Don't accept offer worse than BATNA
+            return {"action": "WALK"}
             return {"action": "WALK"}
 
     # =========================================================================
