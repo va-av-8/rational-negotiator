@@ -123,8 +123,8 @@ def compute_nbs_allocation(
     n = len(quantities)
     max_possible = calculate_value(quantities, valuations_self)
 
-    # Target: halfway between BATNA and max (simplified NBS)
-    nbs_target = (max_possible + batna_self) / 2
+    # Target: take 50-55%
+    nbs_target = batna_self + (max_possible - batna_self) * 0.4
 
     # Sort item types by value per unit (descending) — keep most valuable first
     item_priority = sorted(range(n), key=lambda i: valuations_self[i], reverse=True)
@@ -312,7 +312,7 @@ def prepare_context(obs: dict[str, Any]) -> str:
         quantities, valuations_self, batna_self
     )
     nbs_my_value = calculate_value(nbs_alloc_self, valuations_self)
-    nbs_target = (max_possible + batna_self) / 2
+    nbs_target = batna_self + (max_possible - batna_self) * 0.4
 
     # Item ranking by value per unit
     item_ranking = sorted(range(len(valuations_self)),
