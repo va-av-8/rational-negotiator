@@ -62,31 +62,24 @@ GAME STRUCTURE:
 - You must propose how to split ALL items
 
 YOUR OBJECTIVE:
-Maximize the Nash Bargaining Solution: the product of both players' surpluses above BATNA.
+Maximize the Nash Bargaining Solution: the product of BOTH players' surpluses above BATNA.
     (your_value - your_batna) × (their_value - their_batna)
-This is maximized when BOTH players gain significantly above their outside options.
-A greedy offer that the opponent rejects is worth ZERO. A fair deal you both accept is worth a lot.
+This means BOTH players must gain above their outside options.
+A greedy offer the opponent rejects is worth ZERO. A fair deal accepted is worth a lot.
 
-KEY INSIGHT — THE OPPONENT IS RATIONAL:
-- The opponent will ACCEPT any offer where their value > their BATNA
-- The opponent will REJECT offers that give them too little
-- You cannot know their exact valuations, but you can infer:
-  items you value least are likely valuable to them too
-  → give them items you care less about, keep items you care most about
+KEY INSIGHT — INTEGRATIVE BARGAINING:
+The opponent has DIFFERENT private valuations than you.
+Items you value LEAST are often items they value MOST.
+→ Give them items you care less about. Keep items you care most about.
+→ This creates deals where BOTH sides feel they won — maximizing Nash Welfare.
+
+The context will show you item rankings and a suggested Nash target.
+Use these as your anchor — don't deviate far from the Nash target.
 
 STRATEGY BY ROUND:
-- Round 1: Propose a deal where you get ~65% of YOUR value, opponent gets reasonable share.
-  Don't be too greedy — a rejected offer wastes a round.
-- Middle rounds: If offers are being rejected, you are likely asking too much.
-  Increase opponent's share by ~5-10% of total value each round.
-- Last 2 rounds: Accept anything above your BATNA. Time pressure overrides everything.
-
-FINDING A GOOD SPLIT:
-1. Identify which items you value most → prioritize keeping those
-2. Identify which items you value least → offer those to the opponent generously
-3. Check: does your allocation give you significantly above your BATNA?
-4. Check: does the opponent's allocation seem reasonable (not nearly zero)?
-5. If both checks pass → propose it
+- Round 1: Start near the Nash target. Don't be greedy — rejected offers waste rounds.
+- Middle rounds: If rejected, increase opponent's share of low-value items by 1-2 units.
+- Last round: Close the deal. Accept almost anything above a very low threshold.
 
 RESPOND with JSON only, no explanation:
 {"allocation_self": [int, ...], "allocation_other": [int, ...]}
@@ -112,6 +105,50 @@ def other_from_self(allocation_self: list[int], quantities: list[int]) -> list[i
 def self_from_other(allocation_other: list[int], quantities: list[int]) -> list[int]:
     """Compute allocation_self from allocation_other."""
     return [q - a for q, a in zip(quantities, allocation_other)]
+
+
+def compute_nbs_allocation(
+    quantities: list[int],
+    valuations_self: list[int],
+    batna_self: int
+) -> tuple[list[int], list[int]]:
+    """
+    Approximate Nash Bargaining Solution allocation.
+
+    Strategy: Keep items we value most (per unit), give items we value least.
+    This is Pareto-efficient when opponents have complementary valuations.
+
+    Returns (allocation_self, allocation_other) targeting NBS.
+    """
+    n = len(quantities)
+    max_possible = calculate_value(quantities, valuations_self)
+
+    # Target: halfway between BATNA and max (simplified NBS)
+    nbs_target = (max_possible + batna_self) / 2
+
+    # Sort item types by value per unit (descending) — keep most valuable first
+    item_priority = sorted(range(n), key=lambda i: valuations_self[i], reverse=True)
+
+    allocation_self = [0] * n
+    allocation_other = list(quantities)
+    current_value = 0
+
+    # Greedily take items in order of value until we hit NBS target
+    for i in item_priority:
+        if current_value >= nbs_target:
+            break
+        needed_value = nbs_target - current_value
+        units_to_take = min(
+            quantities[i],
+            # Take only as many units as needed to reach target
+            int(needed_value / valuations_self[i]) + 1 if valuations_self[i] > 0 else quantities[i]
+        )
+        units_to_take = max(0, min(units_to_take, quantities[i]))
+        allocation_self[i] = units_to_take
+        allocation_other[i] = quantities[i] - units_to_take
+        current_value += units_to_take * valuations_self[i]
+
+    return allocation_self, allocation_other
 
 
 def make_greedy_offer(
@@ -201,7 +238,7 @@ def parse_observation(message_text: str) -> dict[str, Any]:
             except json.JSONDecodeError:
                 continue
 
-    # Try to find any JSON object
+    # Try to find any JSON object using depth tracking
     brace_start = message_text.find("{")
     if brace_start != -1:
         depth = 0
@@ -219,12 +256,44 @@ def parse_observation(message_text: str) -> dict[str, Any]:
     return {}
 
 
+def extract_json_from_text(text: str) -> dict[str, Any] | None:
+    """
+    Robustly extract JSON object from LLM response text.
+    Uses depth-tracking to handle nested structures (arrays inside objects).
+    Fixes the broken regex approach that failed on nested JSON.
+    """
+    # First try: direct parse if text is pure JSON
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Second try: find JSON object using brace depth tracking
+    brace_start = text.find("{")
+    if brace_start == -1:
+        return None
+
+    depth = 0
+    for i, c in enumerate(text[brace_start:], brace_start):
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[brace_start:i+1])
+                except json.JSONDecodeError:
+                    break
+
+    return None
+
+
 # =============================================================================
 # LLM Integration
 # =============================================================================
 
 def prepare_context(obs: dict[str, Any]) -> str:
-    """Prepare context message for LLM."""
+    """Prepare context message for LLM with Nash Bargaining guidance."""
     game_index = obs.get("game_index", 0)
     valuations_self = obs.get("valuations_self", [])
     batna_self = obs.get("batna_self", 0)
@@ -233,17 +302,33 @@ def prepare_context(obs: dict[str, Any]) -> str:
     max_rounds = obs.get("max_rounds", 5)
     discount = obs.get("discount", 0.98)
 
-    # Calculate max possible value (all items for myself)
+    # Calculate key values
     max_possible = calculate_value(quantities, valuations_self)
     rounds_left = max_rounds - round_index
     discounted_batna = batna_self * (discount ** (round_index - 1))
 
+    # Nash Bargaining Solution approximation
+    nbs_alloc_self, nbs_alloc_other = compute_nbs_allocation(
+        quantities, valuations_self, batna_self
+    )
+    nbs_my_value = calculate_value(nbs_alloc_self, valuations_self)
+    nbs_target = (max_possible + batna_self) / 2
+
+    # Item ranking by value per unit
+    item_ranking = sorted(range(len(valuations_self)),
+                          key=lambda i: valuations_self[i], reverse=True)
+    ranking_text = "Item priority (keep → give away):\n"
+    for rank, i in enumerate(item_ranking):
+        label = "KEEP (high value)" if rank < len(item_ranking) // 2 + 1 else "GIVE (low value)"
+        ranking_text += f"  Item {i}: value={valuations_self[i]}/unit, qty={quantities[i]} → {label}\n"
+
+    # History
     with _history_lock:
         my_prev_offers = _my_offer_history.get(game_index, [])
 
     history_text = ""
     if my_prev_offers:
-        history_text = "\nMy previous offers to opponent (with my value for each):\n"
+        history_text = "\nMy previous offers (what I gave opponent):\n"
         for i, offer in enumerate(my_prev_offers, 1):
             my_alloc = self_from_other(offer, quantities)
             my_val = calculate_value(my_alloc, valuations_self)
@@ -253,12 +338,20 @@ def prepare_context(obs: dict[str, Any]) -> str:
 - My valuations per item: {valuations_self}
 - Total quantities: {quantities}
 - My BATNA: {batna_self} (discounted this round: {discounted_batna:.1f})
-- Maximum possible value (all items): {max_possible}
+- My maximum possible value (all items): {max_possible}
 - Round: {round_index} of {max_rounds} ({rounds_left} rounds left)
 - Discount per round: {discount}
+
+{ranking_text}
+NASH BARGAINING TARGET:
+- Suggested allocation for me: {nbs_alloc_self} (gives me ~{nbs_my_value:.0f})
+- Suggested allocation for opponent: {nbs_alloc_other}
+- This targets Nash value of ~{nbs_target:.0f} for me (halfway between BATNA and max)
+- My surplus above BATNA at this allocation: {nbs_my_value - batna_self:.0f}
 {history_text}
-TARGET: Propose allocation where MY value > {discounted_batna:.1f} (discounted BATNA).
-The higher above BATNA, the better. Aim for at least {min(discounted_batna * 1.3, max_possible * 0.7):.0f}.
+INSTRUCTION: Start near the Nash target above. 
+Keep items you value most. Give opponent items you value least — they likely value them more.
+Aim for my value ≈ {nbs_target:.0f}. Going much higher risks rejection and wastes rounds.
 """
     return context
 
@@ -269,7 +362,7 @@ def call_llm(context: str) -> dict[str, Any] | None:
         response = client.chat.completions.create(
             model=MODEL,
             max_tokens=500,
-            temperature=0.7,
+            temperature=0.2,  # Low temperature for consistent Nash-seeking behavior
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": context}
@@ -279,16 +372,8 @@ def call_llm(context: str) -> dict[str, Any] | None:
         response_text = response.choices[0].message.content.strip()
         logger.info(f"LLM response: {response_text}")
 
-        # Parse JSON from response
-        if response_text.startswith("{"):
-            return json.loads(response_text)
-
-        # Try to extract JSON from text
-        match = re.search(r"\{[^}]+\}", response_text)
-        if match:
-            return json.loads(match.group())
-
-        return None
+        # Use robust depth-tracking JSON extractor (fixes broken regex)
+        return extract_json_from_text(response_text)
 
     except Exception as e:
         logger.error(f"LLM call failed: {e}")
@@ -336,61 +421,6 @@ def enforce_constraints(
     for i in range(len(quantities)):
         if allocation_self[i] < 0 or allocation_other[i] < 0:
             return None, None  # -> WALK
-
-    # TODO: возможно вернуть позже
-    # -------------------------------------------------------------------------
-    # M3: Cannot give opponent 0 items or keep 0 items for myself
-    # -------------------------------------------------------------------------
-    # if all(x == 0 for x in allocation_other):
-    #     sorted_indices = sorted(range(len(valuations_self)), key=lambda i: valuations_self[i])
-    #     for i in sorted_indices:
-    #         if quantities[i] > 0 and allocation_self[i] > 0:
-    #             allocation_other[i] = 1
-    #             allocation_self[i] -= 1
-    #             break
-    #
-    # if all(x == 0 for x in allocation_self):
-    #     sorted_indices = sorted(range(len(valuations_self)), key=lambda i: valuations_self[i])
-    #     for i in sorted_indices:
-    #         if allocation_other[i] > 0:
-    #             allocation_other[i] -= 1
-    #             allocation_self[i] += 1
-    #             break
-
-    # TODO: возможно вернуть позже
-    # -------------------------------------------------------------------------
-    # M2: My value must be >= BATNA
-    # -------------------------------------------------------------------------
-    # valuations_self = obs["valuations_self"]
-    # batna_self = obs["batna_self"]
-    # if calculate_value(allocation_self, valuations_self) < batna_self:
-    #     allocation_self, allocation_other = adjust_for_batna(
-    #         allocation_self, allocation_other,
-    #         quantities, valuations_self, batna_self
-    #     )
-    #     if allocation_self is None:
-    #         return None, None  # -> WALK
-
-    # TODO: возможно вернуть позже
-    # -------------------------------------------------------------------------
-    # M1: Cannot decrease allocation_other vs previous offer
-    # -------------------------------------------------------------------------
-    # with _history_lock:
-    #     prev_offers = _my_offer_history.get(game_index, [])
-    #
-    # if prev_offers:
-    #     prev_other = prev_offers[-1]
-    #     allocation_other = [max(new, prev) for new, prev in zip(allocation_other, prev_other)]
-    #     allocation_self = self_from_other(allocation_other, quantities)
-    #
-    #     # M2 after M1: check BATNA again
-    #     if calculate_value(allocation_self, valuations_self) < batna_self:
-    #         allocation_self, allocation_other = adjust_for_batna(
-    #             allocation_self, allocation_other,
-    #             quantities, valuations_self, batna_self
-    #         )
-    #         if allocation_self is None:
-    #             return None, None  # -> WALK
 
     return allocation_self, allocation_other
 
@@ -449,7 +479,6 @@ def handle_negotiation_message(message_text: str) -> dict[str, Any]:
             return {"action": "ACCEPT"}
         else:
             return {"action": "WALK"}
-            return {"action": "WALK"}
 
     # =========================================================================
     # PROPOSE - LLM + constraint enforcement
@@ -458,13 +487,18 @@ def handle_negotiation_message(message_text: str) -> dict[str, Any]:
     llm_result = call_llm(context)
 
     if llm_result is None:
-        # Fallback on LLM error - use greedy offer
+        # Fallback on LLM error - use NBS allocation instead of greedy
+        nbs_self, nbs_other = compute_nbs_allocation(quantities, valuations_self, batna_self)
+        if calculate_value(nbs_self, valuations_self) >= batna_self:
+            with _history_lock:
+                _my_offer_history.setdefault(game_index, []).append(nbs_other)
+            return {"allocation_self": nbs_self, "allocation_other": nbs_other}
+
         fallback = make_greedy_offer(quantities, valuations_self, batna_self)
         if fallback is None:
             return {"action": "WALK", "reason": "cannot_satisfy_batna"}
         a_self, a_other = fallback
 
-        # Save to history
         with _history_lock:
             _my_offer_history.setdefault(game_index, []).append(a_other)
 
@@ -473,6 +507,12 @@ def handle_negotiation_message(message_text: str) -> dict[str, Any]:
     a_self, a_other = enforce_constraints(llm_result, obs, game_index)
 
     if a_self is None:
+        # LLM returned invalid allocation — use NBS as fallback instead of WALK
+        nbs_self, nbs_other = compute_nbs_allocation(quantities, valuations_self, batna_self)
+        if calculate_value(nbs_self, valuations_self) >= batna_self:
+            with _history_lock:
+                _my_offer_history.setdefault(game_index, []).append(nbs_other)
+            return {"allocation_self": nbs_self, "allocation_other": nbs_other}
         return {"action": "WALK", "reason": "constraints_unsatisfiable"}
 
     # Save to history
