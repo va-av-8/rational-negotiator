@@ -9,7 +9,6 @@ import logging
 import os
 import re
 import threading
-import itertools
 from typing import Any
 
 from dotenv import load_dotenv
@@ -114,47 +113,42 @@ def compute_nbs_allocation(
     batna_self: int
 ) -> tuple[list[int], list[int]]:
     """
-    Exact Nash Bargaining Solution via full enumeration of all allocations.
-    Maximizes sqrt(my_surplus * their_surplus) = (my_value - batna) * (their_value - batna_est).
-    Their valuations are unknown — assume symmetric (they value what they keep as we value what we keep).
+    Approximate Nash Bargaining Solution allocation.
+
+    Strategy: Keep items we value most (per unit), give items we value least.
+    This is Pareto-efficient when opponents have complementary valuations.
+
+    Returns (allocation_self, allocation_other) targeting NBS.
     """
-    best_alloc = None
-    best_score = -1.0
+    n = len(quantities)
+    max_possible = calculate_value(quantities, valuations_self)
 
-    # Enumerate all possible allocations
-    for alloc in itertools.product(*[range(q + 1) for q in quantities]):
-        alloc_self = list(alloc)
-        alloc_other = [q - a for q, a in zip(quantities, alloc_self)]
+    # Target: 40% of surplus above BATNA (best empirical result)
+    nbs_target = batna_self + (max_possible - batna_self) * 0.4
 
-        # Skip extreme allocations (M3)
-        if all(a == 0 for a in alloc_self) or all(a == 0 for a in alloc_other):
-            continue
+    # Sort item types by value per unit (descending) — keep most valuable first
+    item_priority = sorted(range(n), key=lambda i: valuations_self[i], reverse=True)
 
-        my_value = calculate_value(alloc_self, valuations_self)
+    allocation_self = [0] * n
+    allocation_other = list(quantities)
+    current_value = 0
 
-        # Skip if below BATNA (M2)
-        if my_value < batna_self:
-            continue
+    # Greedily take items in order of value until we hit NBS target
+    for i in item_priority:
+        if current_value >= nbs_target:
+            break
+        needed_value = nbs_target - current_value
+        units_to_take = min(
+            quantities[i],
+            # Take only as many units as needed to reach target
+            int(needed_value / valuations_self[i]) + 1 if valuations_self[i] > 0 else quantities[i]
+        )
+        units_to_take = max(0, min(units_to_take, quantities[i]))
+        allocation_self[i] = units_to_take
+        allocation_other[i] = quantities[i] - units_to_take
+        current_value += units_to_take * valuations_self[i]
 
-        # Estimate their value — symmetric assumption (they value their share as we value ours)
-        their_value = calculate_value(alloc_other, valuations_self)
-
-        # Nash Welfare score — maximize product of surpluses
-        my_surplus = max(0.0, my_value - batna_self)
-        their_surplus = max(0.0, their_value - batna_self)
-        score = my_surplus * their_surplus
-
-        if score > best_score:
-            best_score = score
-            best_alloc = (alloc_self, alloc_other)
-
-    if best_alloc is None:
-        # Fallback — take everything
-        alloc_self = list(quantities)
-        alloc_other = [0] * len(quantities)
-        return alloc_self, alloc_other
-
-    return best_alloc
+    return allocation_self, allocation_other
 
 
 def make_greedy_offer(

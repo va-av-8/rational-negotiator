@@ -17,7 +17,7 @@
     env: {
       PYTHONUNBUFFERED: "1",
       OPENROUTER_API_KEY: "${config.openrouter_api_key}",
-      LLM_MODEL: "mistralai/mistral-large-latest",
+      LLM_MODEL: "anthropic/claude-sonnet-4.6",
     },
     network: {
       endpoints: [
